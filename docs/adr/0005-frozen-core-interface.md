@@ -9,11 +9,14 @@ alternate implementations never face a BC break from later additions:
   semantics: poll downstream processors until this point).
 - `readAll(string $stream, ?ReadOptions $options = null): list<ResolvedEvent>`
   — eager (aggregate-reload idiom).
-- `reader(ReadOptions $options): Generator<ResolvedEvent>` — lazy, for
-  single-stream and `$all` reads, cancellable mid-iteration (null `limit` =
-  unbounded; direction, `resolveLinks`, filter as one enum-shaped
-  `ReadFilter` VO — and no default filter excluding `$`-events, unlike the
-  Python reference: reads stay explicit).
+- `reader(string $stream, ?ReadOptions $options = null): Generator<ResolvedEvent>`
+  — lazy single-stream, cancellable mid-iteration (null `limit` → a 8192
+  default batch window is implementation detail; direction and
+  `resolveLinks` from `ReadOptions`).
+- `readAllEvents(?ReadOptions $options = null): Generator<ResolvedEvent>`
+  — lazy `$all`; the enum-shaped `ReadFilter` VO applies here (one filter
+  axis at a time, explicit — no default filter excluding `$`-events,
+  unlike the Python reference).
 - `deleteStream` / `tombstoneStream` (same `int|ExpectedStreamState` guard).
 - `currentVersion(string $stream): int|ExpectedStreamState`,
   `globalCommitPosition(): int` (checkpoint bootstrap).
