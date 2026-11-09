@@ -1,0 +1,27 @@
+{
+    "name": "m4t1t0/kurrentdb-php-client-monorepo",
+    "description": "Development monorepo for m4t1t0/kurrentdb-contracts and m4t1t0/kurrentdb-client (publishes as two Composer packages via subtree splits).",
+    "license": "MIT",
+    "require": {
+        "php": "^8.4 || ^8.5"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^12.0",
+        "amphp/http-client": "^5.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Kurrent\\": "packages/contracts/src/Kurrent/",
+            "Kurrent\\Amphp\\": "packages/client/src/Kurrent/Amphp/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "KurrentDbTests\\Contracts\\": "tests/contracts/",
+            "KurrentDbTests\\Amphp\\": "tests/amphp/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

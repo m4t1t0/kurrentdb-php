@@ -16,19 +16,32 @@ namespace Kurrent;
  */
 final class EventData
 {
+    public const CONTENT_TYPE_JSON = 'application/json';
+    public const CONTENT_TYPE_OCTET_STREAM = 'application/octet-stream';
+
     /**
      * @param string $eventId RFC 4122 UUID (string form), generated once per event
      * @param string $type event type name (goes into the `type` metadata key)
      * @param string $data opaque payload bytes
      * @param string|null $metadata opaque metadata bytes (null = none); the
      *        wire metadata map also always carries `type` and `content-type`
+     * @param string $contentType payload content type on the wire — only the
+     *        two protocol content types exist (`application/json` via
+     *        {@see EventData::json()}, `application/octet-stream` via
+     *        {@see EventData::bytes()})
      */
     public function __construct(
         public readonly string $eventId,
         public readonly string $type,
         public readonly string $data,
         public readonly null|string $metadata = null,
-    ) {}
+        public readonly string $contentType = self::CONTENT_TYPE_OCTET_STREAM,
+    ) {
+        \in_array($contentType, [self::CONTENT_TYPE_JSON, self::CONTENT_TYPE_OCTET_STREAM], true)
+            || throw new \InvalidArgumentException(
+                \sprintf('Unsupported content type "%s" (only JSON and octet-stream wire shapes exist).', $contentType),
+            );
+    }
 
     /**
      * Convenience constructor for JSON-shaped payloads (content type
@@ -43,8 +56,9 @@ final class EventData
         return new self(
             $eventId ?? self::newId(),
             $type,
-            (string) json_encode($payload, JSON_THROW_ON_ERROR),
-            $metadata === [] ? null : (string) json_encode($metadata, JSON_THROW_ON_ERROR),
+            (string) \json_encode($payload, JSON_THROW_ON_ERROR),
+            $metadata === [] ? null : (string) \json_encode($metadata, JSON_THROW_ON_ERROR),
+            self::CONTENT_TYPE_JSON,
         );
     }
 
@@ -54,7 +68,7 @@ final class EventData
      */
     public static function bytes(string $type, string $data, null|string $metadata = null, null|string $eventId = null): self
     {
-        return new self($eventId ?? self::newId(), $type, $data, $metadata);
+        return new self($eventId ?? self::newId(), $type, $data, $metadata, self::CONTENT_TYPE_OCTET_STREAM);
     }
 
     /**

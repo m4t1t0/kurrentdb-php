@@ -46,20 +46,28 @@ interface KurrentClientInterface
     public function readAll(string $stream, ?ReadOptions $options = null): array;
 
     /**
-     * Lazy (server-streaming) read of one stream or of `$all`, depending on
-     * which side of `ReadOptions` carries the position.
+     * Lazy (server-streaming) read of one stream.
      *
      * The generator yields {@see ResolvedEvent}s one at a time as they arrive
      * and can be cancelled mid-iteration (destroy it or return early). After
-     * complete draining, iteration ends normally and `grpc-status` has been
+     * complete draining, iteration ends normally and grpc-status has been
      * verified.
      *
-     * @param ReadOptions $options `ReadOptions::stream($revision, ...)` or
-     *        `ReadOptions::all($position, ...)`: null position = start
+     * @param ReadOptions|null $options `ReadOptions::stream($revision, ...)`:
+     *        null revision = start of stream; `limit = null` = unbounded
      * @return \Generator<int, ResolvedEvent, void, null>
      * @throws Exception\KurrentException
      */
-    public function reader(ReadOptions $options): \Generator;
+    public function reader(string $stream, ?ReadOptions $options = null): \Generator;
+
+    /**
+     * Lazy (server-streaming) read of `$all`, optionally filtered.
+     *
+     * @param ReadOptions|null $options `ReadOptions::all($position, ...)`:
+     *        null position = start of the log
+     * @return \Generator<int, ResolvedEvent, void, null>
+     */
+    public function readAllEvents(?ReadOptions $options = null): \Generator;
 
     /**
      * Delete a stream: sets its truncate-before so reads report "not found"

@@ -26,6 +26,7 @@ final class ResolvedEvent
      * @param int $revision zero-based, gapless position within that stream
      * @param Position $position `$all` commit/prepare pair of the write
      * @param \DateTimeImmutable|null $recordedAt when the server recorded it
+     * @param string $contentType payload content type per the wire map
      * @param self|null $link the `$>` link event when this envelope resolves
      *        one (its {@see $eventId} is the ack target — never the link's "")
      */
@@ -38,6 +39,7 @@ final class ResolvedEvent
         public readonly int $revision,
         public readonly Position $position,
         public readonly null|\DateTimeImmutable $recordedAt = null,
+        public readonly string $contentType = EventData::CONTENT_TYPE_OCTET_STREAM,
         public readonly null|self $link = null,
     ) {}
 
