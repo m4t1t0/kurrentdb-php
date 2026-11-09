@@ -1,0 +1,18 @@
+{
+    "name": "m4t1t0/kurrentdb-client",
+    "description": "Pure-PHP gRPC client for KurrentDB built on amphp (async HTTP/2). Pre-v0.1 scaffolding; implements m4t1t0/kurrentdb-contracts.",
+    "license": "MIT",
+    "type": "library",
+    "require": {
+        "php": "^8.4 || ^8.5",
+        "m4t1t0/kurrentdb-contracts": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Kurrent\\": "src/Kurrent/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

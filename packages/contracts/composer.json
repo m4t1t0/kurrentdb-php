@@ -1,0 +1,18 @@
+{
+    "name": "m4t1t0/kurrentdb-contracts",
+    "description": "Implementation-free contracts (interface, value objects, typed exceptions) for a KurrentDB PHP client.",
+    "license": "MIT",
+    "type": "library",
+    "keywords": ["kurrentdb", "eventstoredb", "events", "event-sourcing", "grpc", "contracts"],
+    "require": {
+        "php": "^8.4 || ^8.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Kurrent\\": "src/Kurrent/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}
