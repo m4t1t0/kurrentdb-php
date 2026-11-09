@@ -1,0 +1,16 @@
+{
+    "name": "kurrentdb-spike/spike",
+    "description": "Throwaway gRPC-over-amphp spike against KurrentDB",
+    "license": "TODO",
+    "require": {
+        "php": ">=8.4 <9.0",
+        "amphp/http-client": "^5.0",
+        "amphp/amp": "^3.1"
+    },
+    "autoload": {
+        "files": ["lib/protobuf.php", "lib/messages.php"]
+    },
+    "config": {
+        "allow-plugins": false
+    }
+}

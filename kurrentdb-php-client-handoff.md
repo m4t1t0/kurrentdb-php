@@ -184,12 +184,15 @@ Link: https://pkg.go.dev/github.com/phillarmonic/franken-zstd-go
 - [ ] Reach out to the FrankenPHP community — a real-world DB client via the generator may interest them (when Implementation B is revisited).
 
 ### 5.9 Pure-PHP (amphp) route — primary
-- [ ] **Trailers:** can amphp's HTTP/2 client surface HTTP/2 trailers? gRPC delivers `grpc-status`/`grpc-message` via trailers on streaming responses — blocker-level question, prototype it first.
-- [ ] gRPC wire conventions: 5-byte message prefix (compression flag + length), `application/grpc`(+proto) content-type, message framing, end-of-stream signaling.
-- [ ] Metadata and deadlines: per-call metadata, deadline propagation, TLS options from `kurrentdb://`.
-- [ ] Keepalive / ping / idle-connection behavior in amphp.
-- [ ] Confirm the Go client's `protos` package files are Apache-2.0 and use them (not the KLv1 server repo) for `protoc` PHP stub generation.
-- [ ] Decide the PHP protobuf runtime: `google/protobuf` composer package (portable; the C extension is optional/ordeal).
+- [x] **Trailers: amphp HTTP/2 client surfaces HTTP/2 trailers.** *(verified twice)*
+  Source-level: `Response::getTrailers(): Future<Trailers>` in amphp/http-client 5.x, regression-tested HEADERS→DATA→trailing HEADERS. Runtime: the 2026-11-08 spike received `grpc-status` via trailers from a real KurrentDB 26.2.3 (see `spike/`).
+- [x] gRPC wire conventions: 5-byte message prefix, `application/grpc` content-type, client-streaming message framing, half-close sign-off. *(verified in `spike/` 2026-11-08)*
+  Wire facts: send one DATA chunk per frame, no `content-length`, `requires-leader: true` on appends, `ReadReq` requires `uuid_option`, `StreamIdentifier.stream_name`=field 3 (bytes), `shared.UUID{structured=1|string=2}`, server generates `created` metadata, `WrongExpectedVersion` comes in the response body with `grpc-status` still 0.
+- [ ] Metadata and deadlines: per-call metadata, deadline propagation (`grpc-timeout` header sent; parsing verified incoming), TLS options from `kurrentdb://`.
+- [x] Keepalive / ping / idle-connection behavior in amphp: HTTP/2-level PING frames observed on connections during the spike via the netdump capture. *(partially verified — no long-idle soak test yet)*
+- [x] Confirm the Go client's `protos` package is Apache-2.0 and use it for `protoc` PHP stub generation. *(verified: repo LICENSE is Apache-2.0 © Kurrent, Inc; protos for v1 and the new v2 protocols captured in `spike/protos/`)*
+- [x] PHP protobuf runtime: `google/protobuf` composer package chosen by the 2026-11-07 grill session (portable at runtime, optional `ext-protobuf` acceleration).
+- [ ] KurrentDB 26.x ships **v2 protocols** (`kurrentdb.protocol.v2.streams.streamsservice`: `appendsession`, `appendrecords`) alongside v1 — decide alignment (v1 vs v2) when freezing the *interface* (grill ADR-0004 uses v1 vocabulary).
 
 ---
 
@@ -300,7 +303,9 @@ Use this doc as the starting point for the project-refinement session. Nothing b
 
 1. **Identity:** project/package name (must not collide with `friendsofouro/kurrentdb`), new GitHub org or solo repo?
 2. **License:** MIT for our code? NOTICE/attribution obligations coming from the Apache-2.0 protos?
-3. **PHP support floor:** 8.4 only, or also 8.3?
+3. **PHP support floor:** ~~8.4 only, or also 8.3?~~ Decided 2026-11-07 (8.4
+   only); superseded 2026-11-09 — build for **8.4 and 8.5**, the two supported
+   PHP versions (`^8.4 || ^8.5`, CI runs both).
 4. **Async model:** amphp/Revolt is async — do we also ship a blocking facade (e.g. Revolt's blocking wait) since most PHP event-sourcing code is synchronous?
 5. **v0.1 scope:** stream append + read only, or subscriptions included in the first release?
 6. **Adapters:** EventSauce / Ecotone adapters now, or after a stable client?
