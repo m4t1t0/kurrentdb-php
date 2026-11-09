@@ -20,7 +20,13 @@ Key architecture decision (2026-11-05): pure PHP on **amphp** (async HTTP/2 clie
 | `kurrentdb-php-client-handoff.md` | Complete research handoff, verification checklist, roadmap, and **§9 open questions for the grill session** — the refinement agenda. |
 | `.opencode/commands/grill-me.md` | The `/grill-me` command used to run the grilling session from this directory. |
 | `.opencode/commands/grill-with-docs.md` | The `/grill-with-docs` command: invokes the grill-with-docs skill on the context in `PROMPT.md`. |
+| `.opencode/commands/code-review.md` | The `/code-review` command: two-axis Standards/Spec review via the code-review skill. |
 | `.opencode/skills/grill-with-docs/` | The `/grill-with-docs` skill: grilling session that also writes ADRs and a glossary as it goes. |
+| `.opencode/skills/code-review/` | Review changes since a fixed point along Standards + Spec axes (parallel sub-agents). |
+| `.opencode/skills/acceptance-test-first/` | The ATDD process: contract suite first, red→green, capability-skip rules, harness usage. |
+| `.opencode/skills/wire-debug/` | The gRPC wire debugging method: netdump tap + h2dump rendering + Go-client byte diff. |
+| `.opencode/skills/port-spike/` | Promoting validated spike code into `packages/client`; spike-vs-packages split; stub-replacement plan. |
+| `CODING_STANDARDS.md` | Repo coding standards — the Standards-axis input for code-review; process rules live here and in skills, not in agent memory. |
 | `PROMPT.md` | Transient workspace file: paste the plan/design context for the next grill-with-docs session here before invoking it. |
 | `docs/` | Permanent grill-session outputs: ADRs (`adr/`), product spec, Python-client API mapping note. |
 | `GLOSSARY.md` | Project language: domain terms, client API value objects, package artifacts. |
