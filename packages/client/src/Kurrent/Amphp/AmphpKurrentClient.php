@@ -18,6 +18,7 @@ use Kurrent\Exception\DeadlineExceededException;
 use Kurrent\Exception\KurrentException;
 use Kurrent\Exception\NotLeaderException;
 use Kurrent\Exception\ServiceUnavailableException;
+use Kurrent\Exception\StreamDeletedException;
 use Kurrent\Exception\UnsupportedOperationException;
 use Kurrent\KurrentClientInterface;
 use Kurrent\Position;
@@ -167,15 +168,19 @@ final class AmphpKurrentClient implements KurrentClientInterface
         ], $options);
             $outcome = null;
             $found = false;
-            foreach (Protobuf::grpcFrames(self::bodyChunks($response)) as $frame) {
-                $parsed = StreamsProtocol::parseReadResponse($frame);
-                if (($parsed['type'] ?? null) === 'event') {
-                    $outcome = $parsed['event']['stream_revision'] ?? 0;
-                    $found = true;
-                } elseif (($parsed['type'] ?? null) === 'stream_not_found') {
-                    $outcome = ExpectedStreamState::NoStream;
-                    $found = true;
+            try {
+                foreach (Protobuf::grpcFrames(self::bodyChunks($response)) as $frame) {
+                    $parsed = StreamsProtocol::parseReadResponse($frame);
+                    if (($parsed['type'] ?? null) === 'event') {
+                        $outcome = $parsed['event']['stream_revision'] ?? 0;
+                        $found = true;
+                    } elseif (($parsed['type'] ?? null) === 'stream_not_found') {
+                        $outcome = ExpectedStreamState::NoStream;
+                        $found = true;
+                    }
                 }
+            } finally {
+                $response->getBody()->close(); // no half-open streams on abandon or error
             }
             $this->assertCompleted($response, \sprintf('read "%s"', $stream));
             $found || throw new KurrentException('Read gave no outcome for stream ' . $stream);
@@ -317,20 +322,29 @@ final class AmphpKurrentClient implements KurrentClientInterface
                 (int) ($event['commit_position'] ?? 0),
                 (int) ($event['prepare_position'] ?? 0),
             ),
-            recordedAt: \is_string($created) && \ctype_digit($created)
-                ? (function () use ($created): \DateTimeImmutable {
-                    // a hostile server can send any digit string; wrap the
-                    // conversion so generator bodies don't leak untyped errors
-                    try {
-                        return new \DateTimeImmutable(\sprintf('@%d', \intdiv((int) $created, 10_000_000)));
-                    } catch (\Throwable $error) {
-                        throw new KurrentException('server sent an out-of-range "created" timestamp', previous: $error);
-                    }
-                })()
-                : null,
+            recordedAt: self::createdDate($created),
             contentType: $event['content_type'] ?? EventData::CONTENT_TYPE_OCTET_STREAM,
             link: null, // $> resolution (resolveLinks:true) lands with v0.2's link polish
         );
+    }
+
+    /**
+     * Server `created` metadata: 100ns ticks **since the Unix epoch**
+     * (wire-verified 2026-11-10; createdFromProto in the Go client does
+     * time.Unix(0, ticks*100) — the "0001-epoch" reading was a review-finding
+     * misread). The saturation guard stays: an overlong digit string would
+     * squeeze (int) silently, so out-of-range values are typed rejections.
+     */
+    private static function createdDate(mixed $created): null|\DateTimeImmutable
+    {
+        if (!\is_string($created) || !\ctype_digit($created)) {
+            return null;
+        }
+        \strlen($created) > 19 || $created <= '9223372036854775807' || throw new KurrentException('server sent an out-of-range "created" timestamp');
+
+        $totalNanos = (int) $created;
+
+        return new \DateTimeImmutable(\sprintf('@%d.%06d', \intdiv($totalNanos, 10_000_000), \intdiv($totalNanos % 10_000_000, 10)));
     }
 
     // --- append / currentVersion plumbing ----------------------------------
@@ -434,8 +448,13 @@ final class AmphpKurrentClient implements KurrentClientInterface
     private function firstFrame(object $response, string $context): string
     {
         $frame = null;
-        foreach (Protobuf::grpcFrames(self::bodyChunks($response)) as $frame) {
-            break;
+        try {
+            foreach (Protobuf::grpcFrames(self::bodyChunks($response)) as $frame) {
+                break;
+            }
+        } finally {
+            // append responses are unary: leave no half-open stream behind
+            $response->getBody()->close();
         }
         if ($frame === null) {
             // throws the mapped exception when the exchange failed at all;
@@ -471,6 +490,13 @@ final class AmphpKurrentClient implements KurrentClientInterface
                 (int) $leaderPort,
                 \sprintf('%s (this node is no longer the leader; redirect to %s:%d)', $context, $leaderHost, $leaderPort),
             );
+        }
+
+        // the Go client's `exception` trailer convention: `stream-deleted`
+        // + `stream-name` identifies a deleted vs tombstoned stream — mapped
+        // so the frozen StreamDeletedeException is reachable by the transport
+        if ($trailers->getHeader('exception') === 'stream-deleted') {
+            throw new StreamDeletedException(\sprintf('%s (the stream was deleted)', $context));
         }
 
         $typed = match ($status) {

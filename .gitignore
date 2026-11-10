@@ -10,3 +10,4 @@ Thumbs.db
 dump2/
 spike/goprobe/go-probe
 spike/netdump/netdump
+spike/dump/

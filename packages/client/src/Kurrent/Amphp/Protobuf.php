@@ -178,7 +178,7 @@ final class Protobuf
             }
         }
         if ($buffer !== '') {
-            throw new \RuntimeException('truncated gRPC frame: ' . \bin2hex($buffer));
+            throw new \RuntimeException('truncated gRPC frame (first 64 bytes): ' . \substr(\bin2hex($buffer), 0, 128));
         }
     }
 }

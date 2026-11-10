@@ -83,6 +83,11 @@ abstract class KurrentClientContractTest extends TestCase
         self::assertCount(1, $events);
         self::assertSame($event->metadata, $events[0]->metadata);
         self::assertSame($event->eventId, $events[0]->eventId);
+        // .NET-ticks epoch conversion correctness: an unsanitized conversion
+        // decodes to year ~3939 (review-noted) — the year gate catches it
+        self::assertNotNull($events[0]->recordedAt);
+        self::assertGreaterThanOrEqual(2025, (int) $events[0]->recordedAt->format('Y'));
+        self::assertLessThanOrEqual(2100, (int) $events[0]->recordedAt->format('Y'));
     }
 
     public function testSecondAppendWithNoStreamConflicts(): void

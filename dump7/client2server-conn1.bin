@@ -1,0 +1,6 @@
+GET /health HTTP/1.1
+accept: */*
+user-agent: amphp/http-client/5.x
+Accept-Encoding: gzip, deflate, identity
+host: netdump2:2114
+
