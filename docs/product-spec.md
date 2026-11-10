@@ -84,20 +84,31 @@ and `<gh-handle>/kurrentdb-client`, built around the
 
 ## Release scope
 
-- **v0.1**: stream append + single-stream reads. No subscriptions, no `$all`
-  reads.
-- **v0.2 (pre-v1.0)**: `$all` reads with cursor semantics.
+- **v0.1** (amphp client): stream append + single-stream reads, **and** the
+  `$all` lazy read (`readAllEvents`) landed early with the frozen interface —
+  the drift was accepted 2026-11-10 because ADR-0005 freezes that method in
+  the core surface. `deleteStream`, `tombstoneStream`,
+  `globalCommitPosition` throw `UnsupportedOperationException` until v0.2.
+- **Contract tests** damp the surface at the frozen methods' shape only;
+  wire-buffered v0.2 items (link `$>`-pairing, TLS, cluster discovery) are
+  documented deferrals on their docblocks/README.
+- **v0.2 (pre-v1.0)**: `$all` read polish (filters wiring, links, resolve)
+  + delete/tombstone/globalCommitPosition.
 - **Deferred to post-v0.2**: catch-up subscriptions, then persistent
   subscriptions (create/update/delete, ack/nack) as separate capability
   interfaces.
 - **v1.0 (definition of done)**: core API parity with the Python
   `kurrentdbclient` — append with expected state, single-stream + `$all`
   reads, both subscription types, typed exceptions, blocking facade — plus
-  documentation and a runnable Docker quickstart.
+  documentation and a runnable Docker quickstart. The blocking facade is a
+  package-level add around the same frozen methods; nothing on the frozen
+  contract changes shape for it.
 - **Explicitly out of scope for v1.0**: projection management, user
   management, operations APIs.
 - Adapters (EventSauce / Ecotone): started only after the client API has
   stabilized; not in parallel from day one.
+- **Example/consumer app from the quality flow** ships with the v1.0 docs
+  (it needs the stable surface to make sense).
 
 ## Quality & release flow
 

@@ -7,13 +7,14 @@ alternate implementations never face a BC break from later additions:
 - `append(string $stream, iterable $events, int|ExpectedStreamState $expected, ?CallOptions $options = null): int`
   (returns the commit position of the last appended event — Python-client
   semantics: poll downstream processors until this point).
-- `readAll(string $stream, ?ReadOptions $options = null): list<ResolvedEvent>`
+- `readAll(string $stream, ?ReadOptions $readOptions = null, ?CallOptions $options = null): list<ResolvedEvent>`
   — eager (aggregate-reload idiom).
-- `reader(string $stream, ?ReadOptions $options = null): Generator<ResolvedEvent>`
-  — lazy single-stream, cancellable mid-iteration (null `limit` → a 8192
-  default batch window is implementation detail; direction and
-  `resolveLinks` from `ReadOptions`).
-- `readAllEvents(?ReadOptions $options = null): Generator<ResolvedEvent>`
+- `reader(string $stream, ?ReadOptions $readOptions = null, ?CallOptions $options = null): Generator<ResolvedEvent>`
+  — lazy single-stream, cancellable mid-iteration (limit carries a default
+  batch window as implementation detail; direction and `resolveLinks` come
+  from `ReadOptions`; `$>`-link *pairing* is a documented v0.2 deferral —
+  link events currently render as their own envelopes).
+- `readAllEvents(?ReadOptions $readOptions = null, ?CallOptions $options = null): Generator<ResolvedEvent>`
   — lazy `$all`; the enum-shaped `ReadFilter` VO applies here (one filter
   axis at a time, explicit — no default filter excluding `$`-events,
   unlike the Python reference).

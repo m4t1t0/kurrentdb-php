@@ -17,7 +17,6 @@ use Kurrent\Exception\AccessDeniedException;
 use Kurrent\Exception\DeadlineExceededException;
 use Kurrent\Exception\KurrentException;
 use Kurrent\Exception\ServiceUnavailableException;
-use Kurrent\Exception\StreamDeletedException;
 use Kurrent\Exception\UnsupportedOperationException;
 use Kurrent\KurrentClientInterface;
 use Kurrent\Position;
@@ -44,12 +43,11 @@ final class AmphpKurrentClient implements KurrentClientInterface
     private ?HttpClient $client = null;
     private bool $serverReady = false;
 
-    /** @var array{host:string, port:int, tls:bool, user:string|null, password:string|null} */
-    private array $connection;
+    private ConnectionDetails $connection;
 
     public function __construct(string $uri)
     {
-        $this->connection = self::parseConnection($uri);
+        $this->connection = ConnectionDetails::parse($uri);
     }
 
     public function append(string $stream, iterable $events, int|ExpectedStreamState $expected, ?CallOptions $options = null): int
@@ -72,10 +70,9 @@ final class AmphpKurrentClient implements KurrentClientInterface
 
         $commitPosition = null;
         $this->sync(function () use (&$commitPosition, $stream, $frames, $options): void {
+            $context = \sprintf('append to "%s"', $stream);
             $response = $this->grpc(self::path('Streams', 'Append'), $frames, $options, requiresLeader: true);
-
-            [$status, $message] = $this->grpcStatus($response);
-            $parsed = StreamsProtocol::parseAppendResponse($this->firstFrame($response));
+            $parsed = StreamsProtocol::parseAppendResponse($this->firstFrame($response, $context));
 
             if ($parsed['result'] === 'wrong_expected_version') {
                 throw StreamsProtocol::wrongExpectedVersion(
@@ -84,7 +81,7 @@ final class AmphpKurrentClient implements KurrentClientInterface
                     $stream,
                 );
             }
-            $this->assertGrpcOk($status, $message);
+            $this->assertCompleted($response, $context);
 
             $parsed['position']['commit'] ?? throw new KurrentException('AppendResp.Success carried no position');
             \is_int($commit = $parsed['position']['commit']) || throw new KurrentException('AppendResp position commit missing');
@@ -96,10 +93,10 @@ final class AmphpKurrentClient implements KurrentClientInterface
         return $commitPosition;
     }
 
-    public function readAll(string $stream, ?ReadOptions $options = null): array
+    public function readAll(string $stream, ?ReadOptions $readOptions = null, ?CallOptions $options = null): array
     {
         $resolved = [];
-        foreach ($this->reader($stream, $options ?? ReadOptions::stream()) as $event) {
+        foreach ($this->reader($stream, $readOptions ?? ReadOptions::stream(), $options) as $event) {
             \assert($event instanceof ResolvedEvent);
             $resolved[] = $event;
         }
@@ -107,32 +104,35 @@ final class AmphpKurrentClient implements KurrentClientInterface
         return $resolved;
     }
 
-    public function reader(string $stream, ?ReadOptions $options = null): \Generator
+    public function reader(string $stream, ?ReadOptions $readOptions = null, ?CallOptions $options = null): \Generator
     {
-        $options ??= ReadOptions::stream();
-        $response = $this->startRead(fn (): string => self::buildReadRequest(
-            StreamsProtocol::readReq(
+        $readOptions ??= ReadOptions::stream();
+        $response = $this->startRead(
+            fn (): string => Protobuf::grpcFrame(StreamsProtocol::readReq(
                 $stream,
-                \max(1, $options->limit ?? 8192),
-                $options->backwards ? 'end' : ($options->streamRevision ?? 'start'),
-            ),
-        ));
+                self::effectiveLimit($readOptions, 8192),
+                $readOptions->backwards ? 'end' : ($readOptions->streamRevision ?? 'start'),
+                backwards: $readOptions->backwards,
+            )),
+            $options,
+        );
 
         return $this->streamFrames($response);
     }
 
-    public function readAllEvents(?ReadOptions $options = null): \Generator
+    public function readAllEvents(?ReadOptions $readOptions = null, ?CallOptions $options = null): \Generator
     {
-        $options ??= ReadOptions::all();
-        $allPosition = $options->allPosition;
-        $response = $this->startRead(fn (): string => self::buildReadRequest(
-            StreamsProtocol::readAllReq(
+        $readOptions ??= ReadOptions::all();
+        $allPosition = $readOptions->allPosition;
+        $response = $this->startRead(
+            fn (): string => Protobuf::grpcFrame(StreamsProtocol::readAllReq(
                 $allPosition === null ? 'start' : [$allPosition->commitPosition, $allPosition->preparePosition],
-                \max(1, $options->limit ?? 100_000),
-            ),
-        ));
+                self::effectiveLimit($readOptions, 100_000),
+            )),
+            $options,
+        );
 
-        return $this->streamFrames($response, $options->filter);
+        return $this->streamFrames($response, $readOptions->filter);
     }
 
     public function deleteStream(string $stream, int|ExpectedStreamState $expected, ?CallOptions $options = null): void
@@ -152,8 +152,9 @@ final class AmphpKurrentClient implements KurrentClientInterface
             // backwards read of 1 from the end: the stream's last event (its
             // stream_revision is the current revision) or stream_not_found
             // (→ NoStream).
-            $response = $this->grpc(self::path('Streams', 'Read'), [StreamsProtocol::readReq($stream, 1, 'end')], $options);
-            [$status, $message] = $this->grpcStatus($response);
+        $response = $this->grpc(self::path('Streams', 'Read'), [
+            Protobuf::grpcFrame(StreamsProtocol::readReq($stream, 1, 'end', backwards: true)),
+        ], $options);
             $outcome = null;
             $found = false;
             foreach (Protobuf::grpcFrames(self::bodyChunks($response)) as $frame) {
@@ -166,7 +167,7 @@ final class AmphpKurrentClient implements KurrentClientInterface
                     $found = true;
                 }
             }
-            $this->assertGrpcOk($status, $message);
+            $this->assertCompleted($response, \sprintf('read "%s"', $stream));
             $found || throw new KurrentException('Read gave no outcome for stream ' . $stream);
 
             $result = $outcome;
@@ -184,25 +185,20 @@ final class AmphpKurrentClient implements KurrentClientInterface
 
     // --- read plumbing ------------------------------------------------------
 
-    private static function buildReadRequest(string $inner): string
+    /** Frozen contract: `limit = null` means unbounded; any non-positive value is invalid input. */
+    private static function effectiveLimit(ReadOptions $readOptions, int $default): int
     {
-        return Protobuf::grpcFrame($inner);
+        return $readOptions->limit === null
+            ? $default
+            : ($readOptions->limit > 0 ? $readOptions->limit : throw new \InvalidArgumentException('limit must be positive or null (unbounded)'));
     }
 
-    private function startRead(\Closure $frameFactory): object
+    private function startRead(\Closure $frameFactory, ?CallOptions $options): object
     {
         $result = null;
-        $failure = null;
-        $this->sync(function () use (&$result, &$failure, $frameFactory): void {
-            try {
-                $result = $this->grpc(self::path('Streams', 'Read'), [$frameFactory()], null);
-            } catch (\Throwable $error) {
-                $failure = $error;
-            }
+        $this->sync(function () use (&$result, $frameFactory, $options): void {
+            $result = $this->grpc(self::path('Streams', 'Read'), [$frameFactory()], $options);
         });
-        if ($failure) {
-            throw $failure;
-        }
 
         \is_object($result) || throw new KurrentException('read started without a response');
 
@@ -220,20 +216,10 @@ final class AmphpKurrentClient implements KurrentClientInterface
         $done = false;
         while (!$done) {
             $chunk = null;
-            $failure = null;
-            $this->sync(function () use (&$chunk, &$failure, &$done, $response): void {
-                try {
-                    $chunk = $response->getBody()->read();
-                    if ($chunk === null) {
-                        $done = true;
-                    }
-                } catch (\Throwable $error) {
-                    $failure = $error;
-                }
+            $this->sync(function () use (&$chunk, &$done, $response): void {
+                $chunk = $response->getBody()->read();
+                $done = $chunk === null;
             });
-            if ($failure) {
-                throw $failure;
-            }
             if ($chunk === null) {
                 continue;
             }
@@ -260,8 +246,7 @@ final class AmphpKurrentClient implements KurrentClientInterface
         }
 
         $buffer === '' || throw new KurrentException('stream ended with a truncated gRPC frame: ' . \bin2hex($buffer));
-        [$status, $message] = $this->grpcStatus($response);
-        $this->assertGrpcOk($status, $message);
+        $this->assertCompleted($response, 'read');
     }
 
     private static function passesFilter(ResolvedEvent $event, ?ReadFilter $filter): bool
@@ -337,7 +322,7 @@ final class AmphpKurrentClient implements KurrentClientInterface
     {
         $timeoutMs = $options?->timeoutMs ?? 30_000;
         $request = new Request(
-            ($this->connection['tls'] ? 'https://' : 'http://') . $this->connection['host'] . ':' . $this->connection['port'] . $path,
+            ($this->connection->tls ? 'https://' : 'http://') . $this->connection->host . ':' . $this->connection->port . $path,
             'POST',
         );
         $request->setProtocolVersions(['2']);
@@ -383,7 +368,7 @@ final class AmphpKurrentClient implements KurrentClientInterface
         while (true) {
             try {
                 $response = $this->httpClient()->request(new Request(
-                    ($this->connection['tls'] ? 'https://' : 'http://') . $this->connection['host'] . ':' . $this->connection['port'] . '/health',
+                    ($this->connection->tls ? 'https://' : 'http://') . $this->connection->host . ':' . $this->connection->port . '/health',
                 ));
                 $response->getBody()->buffer();
                 $this->serverReady = true;
@@ -405,53 +390,57 @@ final class AmphpKurrentClient implements KurrentClientInterface
         }
     }
 
-    private function firstFrame(object $response): string
+    private function firstFrame(object $response, string $context): string
     {
         $frame = null;
         foreach (Protobuf::grpcFrames(self::bodyChunks($response)) as $frame) {
             break;
         }
         if ($frame === null) {
-            [$status, $message] = $this->grpcStatus($response);
-            throw self::statusToException($status, $message, 'server returned no gRPC frame');
+            // throws the mapped exception when the exchange failed at all;
+            // status 0 without a body is its own (rarer) transport failure
+            $this->assertCompleted($response, $context);
+            throw new KurrentException("$context completed without a gRPC frame");
         }
 
         return $frame;
     }
 
-    /** @return array{0:string, 1:null|string} [grpcStatus, grpcMessage] */
-    private function grpcStatus(object $response): array
+    /**
+     * Verify a completed gRPC exchange: grpc-status 0 passes; failure throws
+     * the mapped typed exception. Maps leader-endpoint trailers per the Go
+     * client (NOT_FOUND + leader-endpoint-* = not-leader redirect; the
+     * rich-status detail decode for tombstone/maximum-subscriptions etc. is
+     * the later phase-2 addition — and *no* message string-sniffing).
+     */
+    private function assertCompleted(object $response, string $context): void
     {
         $trailers = $response->getTrailers()->await();
-
-        return [
-            $trailers->getHeader('grpc-status') ?? (string) ($response->getHeader('grpc-status') ?? '?'),
-            $trailers->getHeader('grpc-message') ?? $response->getHeader('grpc-message'),
-        ];
-    }
-
-    private function assertGrpcOk(string $status, null|string $message): void
-    {
-        if ($status !== '0') {
-            throw self::statusToException($status, $message, 'gRPC failed');
+        $status = $trailers->getHeader('grpc-status') ?? (string) ($response->getHeader('grpc-status') ?? '?');
+        $message = $trailers->getHeader('grpc-message') ?? $response->getHeader('grpc-message');
+        if ($status === '0') {
+            return;
         }
-    }
 
-    private static function statusToException(string $status, null|string $message, string $context): \Throwable
-    {
-        $text = $message ?? '';
+        $trailers = $response->getTrailers()->await();
+        $leaderHost = $trailers->getHeader('leader-endpoint-host');
+        $leaderPort = $trailers->getHeader('leader-endpoint-port');
+        if ($leaderHost !== null && $leaderPort !== null && \ctype_digit((string) $leaderPort)) {
+            throw new NotLeaderException(
+                (string) $leaderHost,
+                (int) $leaderPort,
+                \sprintf('%s (this node is no longer the leader; redirect to %s:%d)', $context, $leaderHost, $leaderPort),
+            );
+        }
+
         $typed = match ($status) {
             '4' => DeadlineExceededException::class,
             '7' => AccessDeniedException::class,
             '14' => ServiceUnavailableException::class,
             default => null,
         };
-        $messageText = \sprintf('%s (grpc-status=%s%s)', $context, $status, $text !== '' ? ': ' . $text : '');
-        if ($status !== '0' && \str_contains($text, 'stream deleted')) {
-            return new StreamDeletedException($messageText);
-        }
 
-        return new ($typed ?? KurrentException::class)($messageText);
+        throw new ($typed ?? KurrentException::class)(\sprintf('%s (grpc-status=%s%s)', $context, $status, $message !== null && $message !== '' ? ': ' . $message : ''));
     }
 
     /**
@@ -476,57 +465,5 @@ final class AmphpKurrentClient implements KurrentClientInterface
         if ($failure) {
             throw $failure;
         }
-    }
-
-    /**
-     * Minimal `kurrentdb://` parser (v0.1: one target, insecure mode).
-     *
-     * @return array{host:string, port:int, tls:bool, user:string|null, password:string|null}
-     */
-    private static function parseConnection(string $uri): array
-    {
-        if (!\str_starts_with($uri, 'kurrentdb://')) {
-            throw new KurrentException(\sprintf('Only kurrentdb:// uris are supported in v0.1, got "%s"', $uri));
-        }
-        $rest = \substr($uri, \strlen('kurrentdb://'));
-        $qPos = \strpos($rest, '?');
-        $targetPart = $qPos === false ? $rest : \substr($rest, 0, $qPos);
-        $queryStr = $qPos === false ? '' : \substr($rest, $qPos + 1);
-
-        \parse_str($queryStr, $query);
-        $hostParts = \explode('@', $targetPart);
-        $credentials = \count($hostParts) === 2 && $hostParts[0] !== '' ? \explode(':', $hostParts[0]) : null;
-        $targets = \explode(',', \end($hostParts));
-        \count($targets) === 1 || throw new KurrentException('v0.1 supports exactly one target (no cluster discovery)');
-
-        $target = $targets[0];
-        if (\str_starts_with($target, '[')) { // IPv6 literal: [::1]:2113
-            $hostEnd = \strpos($target, ']') ?: throw new KurrentException("malformed IPv6 target \"$target\"");
-            $host = \substr($target, 1, $hostEnd - 1);
-            $socketStr = \substr($target, $hostEnd + 1);
-            $port = \str_starts_with($socketStr, ':') ? (int) \substr($socketStr, 1) : 2113;
-        } else {
-            $host = $target;
-            $port = 2113;
-            if (\str_contains($target, ':')) {
-                [$host, $portStr] = \explode(':', $target, 2);
-                $port = (int) $portStr;
-            }
-        }
-        $tls = true;
-        foreach ($query as $key => $value) {
-            if (\strcasecmp((string) $key, 'Tls') === 0) {
-                $tls = \in_array((string) $value, ['true', '1'], true);
-            }
-        }
-        $tls && throw new KurrentException('TLS is v0.2 work; use ?Tls=false in v0.1 (insecure testing)');
-
-        return [
-            'host' => $host,
-            'port' => (int) $port,
-            'tls' => false,
-            'user' => $credentials === null ? null : ($credentials[0] ?? null),
-            'password' => $credentials === null ? null : ($credentials[1] ?? null),
-        ];
     }
 }

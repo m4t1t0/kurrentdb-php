@@ -45,8 +45,8 @@ final class StreamsProtocol
     public static function proposedMessage(string $eventUuid, string $data, string $eventType, string $contentType): string
     {
         $meta =
-            Protobuf::msg(2, Protobuf::str(1, 'type') . Protobuf::str(2, $eventType))
-            . Protobuf::msg(2, Protobuf::str(1, 'content-type') . Protobuf::str(2, $contentType));
+            Protobuf::msg(2, Protobuf::bytes(1, 'type') . Protobuf::bytes(2, $eventType))
+            . Protobuf::msg(2, Protobuf::bytes(1, 'content-type') . Protobuf::bytes(2, $contentType));
 
         [$eventBytes] = self::uuidBytesFromString($eventUuid);
         // id (field 1) → shared.UUID (message) → structured oneof member (field 1) → Structured{most=1, least=2}
@@ -76,7 +76,7 @@ final class StreamsProtocol
      * count=5 (force), no_filter=8, uuid_option=9 (structured). uuidOption is
      * **required** by current servers (26.x verifies presence).
      */
-    public static function readReq(string $stream, int $count, null|int|string $from = 'start'): string
+    public static function readReq(string $stream, int $count, null|int|string $from = 'start', bool $backwards = false): string
     {
         $streamOptions = Protobuf::msg(1, self::streamIdentifier($stream));
         $streamOptions .= match ($from) {
@@ -88,6 +88,7 @@ final class StreamsProtocol
         return Protobuf::msg(1, self::readReqPayload(
             Protobuf::msg(1, $streamOptions), // stream (vs all=2)
             $count,
+            $backwards,
         ));
     }
 
@@ -108,9 +109,10 @@ final class StreamsProtocol
         return Protobuf::msg(1, self::readReqPayload(Protobuf::msg(2, $allOptions), $count));
     }
 
-    private static function readReqPayload(string $positionOption, int $count): string
+    private static function readReqPayload(string $positionOption, int $count, bool $backwards = false): string
     {
         return $positionOption
+            . Protobuf::num(3, $backwards ? 1 : 0) // read_direction: Backwards encodes 1; Forwards(0) omits
             . Protobuf::num(5, $count, force: true)
             . Protobuf::msg(8, '')  // no_filter
             . Protobuf::msg(9, Protobuf::msg(1, '')); // uuid_option: structured
@@ -122,8 +124,7 @@ final class StreamsProtocol
         return Protobuf::bytes(3, $stream);
     }
 
-    /** Parse AppendResp: Success=1 (current_revision/position) | WrongExpectedVersion=2 (20.6.0 fields). */
-    public static function parseAppendResponse(string $msg): array
+    /** Parse AppendResp: Success=1 (current_revision/position) | WrongExpectedVersion=2 (20.6.0 fields). */    public static function parseAppendResponse(string $msg): array
     {
         $out = ['result' => null, 'current_revision' => null, 'position' => null, 'current' => null, 'expected' => null];
         foreach (Protobuf::fields($msg) as [$field, , $value]) {
@@ -162,11 +163,6 @@ final class StreamsProtocol
         }
 
         return $out;
-    }
-
-    public static function expectedVersionMatch(mixed $wireVersion): null|int|string
-    {
-        return $wireVersion; // pass-through; already int | symbolic string
     }
 
     /** AppendResp.Position / shared position message → commit/prepare pair. */
@@ -208,7 +204,7 @@ final class StreamsProtocol
         return ['type' => 'unknown'];
     }
 
-    /** ReadResp.ReadEvent.RecordedEvent (revision zero is omitted — proto3 zero scalars). */
+    /** ReadResp.ReadEvent.RecordedEvent (revision 0 is omitted — proto3 zero scalars; nonzero revisions arrive at field 3). */
     private static function parseRecordedEvent(array $fields): array
     {
         $event = [
@@ -226,6 +222,7 @@ final class StreamsProtocol
             match ($field) {
                 1 => $event['event_id'] = self::parseUuid(Protobuf::fields($value)),
                 2 => $event['stream_name'] = self::parseStreamName(Protobuf::fields($value)),
+                3 => $event['stream_revision'] = $value, // uint64, zero-based; absent only when 0
                 4 => $event['prepare_position'] = $value,
                 5 => $event['commit_position'] = $value,
                 6 => $event['metadata_entries'][] = $value,

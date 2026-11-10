@@ -41,11 +41,6 @@ final class Protobuf
         return self::tag($field, self::LEN) . self::varint(\strlen($bytes)) . $bytes;
     }
 
-    public static function str(int $field, string $string): string
-    {
-        return self::msg($field, $string);
-    }
-
     public static function bytes(int $field, string $bytes): string
     {
         return self::msg($field, $bytes);

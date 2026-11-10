@@ -8,3 +8,5 @@ Thumbs.db
 .phpunit.result.cache
 .phpunit.cache/
 dump2/
+spike/goprobe/go-probe
+spike/netdump/netdump

@@ -38,12 +38,16 @@ interface KurrentClientInterface
      * Eager read of one stream (materialized; aggregate-reload idiom).
      *
      * @param string $stream stream name
-     * @param ReadOptions|null $options `ReadOptions::stream($revision, ...)`:
-     *        null revision = start of stream; `limit = null` = unbounded
+     * @param ReadOptions|null $readOptions `ReadOptions::stream($revision, ...)`:
+     *        null revision = start of stream; `limit = null` = unbounded.
+     *        No default filter: `$`-prefixed/system events pass through
+     *        unless `readOptions->filter` is set (deliberate deviation
+     *        from the Python client — see ADR-0005).
+     * @param CallOptions|null $options per-call knobs (timeout, headers)
      * @return list<ResolvedEvent> in read direction order
      * @throws Exception\KurrentException
      */
-    public function readAll(string $stream, ?ReadOptions $options = null): array;
+    public function readAll(string $stream, ?ReadOptions $readOptions = null, ?CallOptions $options = null): array;
 
     /**
      * Lazy (server-streaming) read of one stream.
@@ -53,21 +57,30 @@ interface KurrentClientInterface
      * complete draining, iteration ends normally and grpc-status has been
      * verified.
      *
-     * @param ReadOptions|null $options `ReadOptions::stream($revision, ...)`:
-     *        null revision = start of stream; `limit = null` = unbounded
+     * v0.2 note: `resolveLinks` currently yields link events as their own
+     * envelopes (no `$>`/target pairing yet); the pairing semantics arrive
+     * with link polish — link-free envelopes are contract-stable now.
+     *
+     * @param string $stream stream name
+     * @param ReadOptions|null $readOptions `ReadOptions::stream($revision, ...)`:
+     *        null revision = start of stream
+     * @param CallOptions|null $options per-call knobs (timeout, headers)
      * @return \Generator<int, ResolvedEvent, void, null>
      * @throws Exception\KurrentException
      */
-    public function reader(string $stream, ?ReadOptions $options = null): \Generator;
+    public function reader(string $stream, ?ReadOptions $readOptions = null, ?CallOptions $options = null): \Generator;
 
     /**
      * Lazy (server-streaming) read of `$all`, optionally filtered.
      *
-     * @param ReadOptions|null $options `ReadOptions::all($position, ...)`:
+     * Same v0.2 `resolveLinks` note as {@see reader()}.
+     *
+     * @param ReadOptions|null $readOptions `ReadOptions::all($position, ...)`:
      *        null position = start of the log
+     * @param CallOptions|null $options per-call knobs (timeout, headers)
      * @return \Generator<int, ResolvedEvent, void, null>
      */
-    public function readAllEvents(?ReadOptions $options = null): \Generator;
+    public function readAllEvents(?ReadOptions $readOptions = null, ?CallOptions $options = null): \Generator;
 
     /**
      * Delete a stream: sets its truncate-before so reads report "not found"

@@ -89,6 +89,39 @@ abstract class KurrentClientContractTest extends TestCase
         self::assertSame('b', $events[1]->eventType);
     }
 
+    public function testRevisionsDecodeGaplessAcrossAppends(): void
+    {
+        $client = $this->createClient();
+        $stream = $this->newStreamName();
+
+        // revision 0 arrives by omission (proto3), 1 and 2 arrive at field 3:
+        // this test triggered a wire bug where only revision 0 decoded
+        $client->append($stream, [
+            \Kurrent\EventData::json('r0', []),
+            \Kurrent\EventData::json('r1', []),
+            \Kurrent\EventData::json('r2', []),
+        ], ExpectedStreamState::NoStream);
+
+        $events = $client->readAll($stream);
+        self::assertSame([0, 1, 2], \array_map(static fn ($e) => $e->revision, $events));
+    }
+
+    public function testCurrentVersionReportsTheLastRevision(): void
+    {
+        $client = $this->createClient();
+        $stream = $this->newStreamName();
+        $client2 = $this->createClient();
+
+        self::assertSame(\Kurrent\ExpectedStreamState::NoStream, $client2->currentVersion($stream));
+
+        $client->append($stream, [
+            \Kurrent\EventData::json('v0', []),
+            \Kurrent\EventData::json('v1', []),
+        ], ExpectedStreamState::NoStream);
+
+        self::assertSame(1, $client->currentVersion($stream));
+    }
+
     public function testReaderYieldsEventsLazily(): void
     {
         $client = $this->createClient();
