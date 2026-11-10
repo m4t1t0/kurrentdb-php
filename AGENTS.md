@@ -23,6 +23,7 @@ Key architecture decision (2026-11-05): pure PHP on **amphp** (async HTTP/2 clie
 | `.opencode/commands/code-review.md` | The `/code-review` command: two-axis Standards/Spec review via the code-review skill. |
 | `.opencode/skills/grill-with-docs/` | The `/grill-with-docs` skill: grilling session that also writes ADRs and a glossary as it goes. |
 | `.opencode/skills/code-review/` | Review changes since a fixed point along Standards + Spec axes (parallel sub-agents). |
+| `.opencode/skills/adversarial-reviewer/` + `/adversarial-review` command | Hostile-persona review (Saboteur/New Hire/Security Auditor) — mandatory before package tags; personas MUST run on DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`), never the build model. |
 | `.opencode/skills/acceptance-test-first/` | The ATDD process: contract suite first, red→green, capability-skip rules, harness usage. |
 | `.opencode/skills/wire-debug/` | The gRPC wire debugging method: netdump tap + h2dump rendering + Go-client byte diff. |
 | `.opencode/skills/port-spike/` | Promoting validated spike code into `packages/client`; spike-vs-packages split; stub-replacement plan. |
