@@ -40,9 +40,11 @@ final class StreamsProtocol
      * AppendReq.ProposedMessage: id=1 (shared.UUID{structured=1; string=2}
      * → id uses the structured form, mirroring the Go client), metadata=2
      * (map entries key/value), custom_metadata=3, data=4. Clients send only
-     * `type` + `content-type`; `created` is server-generated.
+     * `type` + `content-type` in the map; `created` is server-generated.
+     * The caller's metadata bytes ride on field 3 (custom_metadata) —
+     * dropping them silently loses user data (review-noted regression).
      */
-    public static function proposedMessage(string $eventUuid, string $data, string $eventType, string $contentType): string
+    public static function proposedMessage(string $eventUuid, string $data, string $eventType, string $contentType, null|string $metadataBytes = null): string
     {
         $meta =
             Protobuf::msg(2, Protobuf::bytes(1, 'type') . Protobuf::bytes(2, $eventType))
@@ -55,7 +57,7 @@ final class StreamsProtocol
             Protobuf::int64Bytes(1, \substr($eventBytes, 0, 8)) . Protobuf::int64Bytes(2, \substr($eventBytes, 8, 8)),
         ));
 
-        return $id . $meta . Protobuf::bytes(4, $data);
+        return $id . $meta . ($metadataBytes === null ? '' : Protobuf::bytes(3, $metadataBytes)) . Protobuf::bytes(4, $data);
     }
 
     /** AppendReq{content: options} (Append RPC first frame). */
@@ -65,9 +67,9 @@ final class StreamsProtocol
     }
 
     /** AppendReq{content: proposed_message} (Append RPC event frame) — field 2, not 1! */
-    public static function appendReqMessage(string $eventUuid, string $data, string $eventType, string $contentType): string
+    public static function appendReqMessage(string $eventUuid, string $data, string $eventType, string $contentType, null|string $metadataBytes = null): string
     {
-        return Protobuf::msg(2, self::proposedMessage($eventUuid, $data, $eventType, $contentType));
+        return Protobuf::msg(2, self::proposedMessage($eventUuid, $data, $eventType, $contentType, $metadataBytes));
     }
 
     /**
@@ -92,12 +94,6 @@ final class StreamsProtocol
         ));
     }
 
-    /**
-     * ReadReq on `$all`: all=2 (AllOptions{start=2|end=4|position=1{commit,prepare}})
-     * + count + no_filter + uuid_option.
-     *
-     * @param string|array{0:int,1:int}|null $from 'start'|'end'|Position pair
-     */
     /**
      * ReadReq on `$all`: options.all_option = AllOptions
      * (streams.proto:53 — position=1{commit,prepare}; start=2; **end=3**),

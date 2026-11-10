@@ -39,7 +39,10 @@ abstract class KurrentClientContractTest extends TestCase
 
         $commitPosition = $client->append($stream, [$event], ExpectedStreamState::NoStream);
 
-        self::assertGreaterThan(0, $commitPosition, 'a fresh `$all` commit position must grow');
+        // NOT "> 0": the very first event of a virgin database may commit at
+        // position 0 (review-noted order-dependence in the old assertion)
+        self::assertGreaterThanOrEqual(0, $commitPosition);
+        self::assertIsInt($commitPosition);
     }
 
     public function testAppendThenReadAllRoundTripsTheEvent(): void
@@ -48,7 +51,7 @@ abstract class KurrentClientContractTest extends TestCase
         $stream = $this->newStreamName();
         $event = \Kurrent\EventData::json('contract-says-hello', ['orderId' => 7]);
 
-        $client->append($stream, [$event], ExpectedStreamState::NoStream);
+        $commitPosition = $client->append($stream, [$event], ExpectedStreamState::NoStream);
 
         $events = $client->readAll($stream);
         self::assertCount(1, $events);
@@ -60,8 +63,26 @@ abstract class KurrentClientContractTest extends TestCase
         self::assertSame($event->metadata, $resolved->metadata);
         self::assertSame($event->contentType, $resolved->contentType);
         self::assertSame($stream, $resolved->streamName);
+        // the append-result commit position must EQUAL the read-back position:
+        // binds append() to the same wire outcome the reader sees
+        self::assertSame($commitPosition, $resolved->position->commitPosition);
         self::assertSame(0, $resolved->revision, 'first event in a fresh stream is at revision 0');
-        self::assertGreaterThan(0, $resolved->position->commitPosition);
+    }
+
+    public function testAppendWithMetadataRoundTrips(): void
+    {
+        $client = $this->createClient();
+        $stream = $this->newStreamName();
+        // review-noted blind spot: metadata must round-trip as opaque bytes —
+        // data loss here was invisible while every test used json() defaults
+        $event = \Kurrent\EventData::bytes('with-metadata', '{"x":1}', '{"correlation":"c-99"}');
+
+        $commitPosition = $client->append($stream, [$event], ExpectedStreamState::NoStream);
+
+        $events = $client->readAll($stream);
+        self::assertCount(1, $events);
+        self::assertSame($event->metadata, $events[0]->metadata);
+        self::assertSame($event->eventId, $events[0]->eventId);
     }
 
     public function testSecondAppendWithNoStreamConflicts(): void
@@ -104,6 +125,26 @@ abstract class KurrentClientContractTest extends TestCase
 
         $events = $client->readAll($stream);
         self::assertSame([0, 1, 2], \array_map(static fn ($e) => $e->revision, $events));
+    }
+
+    public function testReaderBackwardsFromRevisionReadsDownward(): void
+    {
+        $client = $this->createClient();
+        $stream = $this->newStreamName();
+        $client->append($stream, [
+            \Kurrent\EventData::json('r0', []),
+            \Kurrent\EventData::json('r1', []),
+            \Kurrent\EventData::json('r2', []),
+        ], ExpectedStreamState::NoStream);
+
+        // vexing asymmetry review-caught: backwards WITH an explicit revision
+        // must read downward from it, not silently from the stream head
+        $types = [];
+        foreach ($client->reader($stream, \Kurrent\ReadOptions::stream(2, backwards: true)) as $resolved) {
+            $types[] = $resolved->eventType;
+        }
+
+        self::assertSame(['r2', 'r1', 'r0'], $types);
     }
 
     public function testReadAllEventsBackwardsYieldsLogOrderReversed(): void

@@ -16,6 +16,7 @@ use Kurrent\ExpectedStreamState;
 use Kurrent\Exception\AccessDeniedException;
 use Kurrent\Exception\DeadlineExceededException;
 use Kurrent\Exception\KurrentException;
+use Kurrent\Exception\NotLeaderException;
 use Kurrent\Exception\ServiceUnavailableException;
 use Kurrent\Exception\UnsupportedOperationException;
 use Kurrent\KurrentClientInterface;
@@ -61,6 +62,7 @@ final class AmphpKurrentClient implements KurrentClientInterface
                 $event->data,
                 $event->type,
                 $event->contentType,
+                $event->metadata,
             ));
             $eventCount++;
         }
@@ -107,17 +109,22 @@ final class AmphpKurrentClient implements KurrentClientInterface
     public function reader(string $stream, ?ReadOptions $readOptions = null, ?CallOptions $options = null): \Generator
     {
         $readOptions ??= ReadOptions::stream();
+        // backwards + no revision anchors at the stream end; backwards WITH a
+        // revision reads from that revision (review-caught asymmetric drop).
+        // This method is a generator: nothing runs until first iteration.
         $response = $this->startRead(
             fn (): string => Protobuf::grpcFrame(StreamsProtocol::readReq(
                 $stream,
                 self::effectiveLimit($readOptions),
-                $readOptions->backwards ? 'end' : ($readOptions->streamRevision ?? 'start'),
+                $readOptions->backwards
+                    ? ($readOptions->streamRevision === null ? 'end' : $readOptions->streamRevision)
+                    : ($readOptions->streamRevision ?? 'start'),
                 backwards: $readOptions->backwards,
             )),
             $options,
         );
 
-        return $this->streamFrames($response);
+        return yield from $this->streamFrames($response, $readOptions->filter);
     }
 
     public function readAllEvents(?ReadOptions $readOptions = null, ?CallOptions $options = null): \Generator
@@ -135,7 +142,7 @@ final class AmphpKurrentClient implements KurrentClientInterface
             $options,
         );
 
-        return $this->streamFrames($response, $readOptions->filter);
+        return yield from $this->streamFrames($response, $readOptions->filter);
     }
 
     public function deleteStream(string $stream, int|ExpectedStreamState $expected, ?CallOptions $options = null): void
@@ -217,44 +224,62 @@ final class AmphpKurrentClient implements KurrentClientInterface
      * Consume-driven Generator: each resumption drives transport reads
      * through a fresh Revolt suspension (lazy + cancellable — nothing runs
      * until iteration). Ends by verifying the trailers' grpc-status.
+     *
+     * Abandonment safety: `finally` closes the response body even when the
+     * consumer breaks/returns early or throws — otherwise the open HTTP/2
+     * stream leaks its flow-control window (review-noted CRITICAL).
+     * Mid-stream transport failures are mapped into the typed contract
+     * exceptions; reader() itself never leaves a half-open transport object.
      */
     private function streamFrames(object $response, ?ReadFilter $filter = null): \Generator
     {
-        $buffer = '';
-        $done = false;
-        while (!$done) {
-            $chunk = null;
-            $this->sync(function () use (&$chunk, &$done, $response): void {
-                $chunk = $response->getBody()->read();
-                $done = $chunk === null;
-            });
-            if ($chunk === null) {
-                continue;
+        try {
+            $buffer = '';
+            $done = false;
+            while (!$done) {
+                $chunk = null;
+                $this->sync(function () use (&$chunk, &$done, $response): void {
+                    try {
+                        $chunk = $response->getBody()->read();
+                        $done = $chunk === null;
+                    } catch (TimeoutException $error) {
+                        throw new DeadlineExceededException($error->getMessage(), previous: $error);
+                    } catch (\Amp\Http\Client\HttpException $error) {
+                        throw new ServiceUnavailableException($error->getMessage(), previous: $error);
+                    }
+                    // anything else (incl. Revolt parse/runtime errors) surfaces
+                    // unchanged: those are code bugs, not transport outcomes
+                });
+                if ($chunk === null) {
+                    continue;
+                }
+
+                $buffer .= $chunk;
+                while (\strlen($buffer) >= 5) {
+                    $len = \unpack('N', \substr($buffer, 1, 4))[1];
+                    if (\strlen($buffer) < 5 + $len) {
+                        break; // wait for the next chunk
+                    }
+                    $payload = \substr($buffer, 5, $len);
+                    $buffer = \substr($buffer, 5 + $len);
+
+                    $parsed = StreamsProtocol::parseReadResponse($payload);
+                    $resolvedEvent = match ($parsed['type']) {
+                        'event' => $this->resolvedEvent($parsed['event']),
+                        'stream_not_found' => throw new KurrentException('stream not found'),
+                        default => null,
+                    };
+                    if ($resolvedEvent !== null && self::passesFilter($resolvedEvent, $filter)) {
+                        yield $resolvedEvent;
+                    }
+                }
             }
 
-            $buffer .= $chunk;
-            while (\strlen($buffer) >= 5) {
-                $len = \unpack('N', \substr($buffer, 1, 4))[1];
-                if (\strlen($buffer) < 5 + $len) {
-                    break; // wait for the next chunk
-                }
-                $payload = \substr($buffer, 5, $len);
-                $buffer = \substr($buffer, 5 + $len);
-
-                $parsed = StreamsProtocol::parseReadResponse($payload);
-                $resolvedEvent = match ($parsed['type']) {
-                    'event' => $this->resolvedEvent($parsed['event']),
-                    'stream_not_found' => throw new KurrentException('stream not found'),
-                    default => null,
-                };
-                if ($resolvedEvent !== null && self::passesFilter($resolvedEvent, $filter)) {
-                    yield $resolvedEvent;
-                }
-            }
+            $buffer === '' || throw new KurrentException('stream ended with a truncated gRPC frame (first 64 bytes): ' . \substr(\bin2hex($buffer), 0, 128));
+            $this->assertCompleted($response, 'read');
+        } finally {
+            $response->getBody()->close();
         }
-
-        $buffer === '' || throw new KurrentException('stream ended with a truncated gRPC frame: ' . \bin2hex($buffer));
-        $this->assertCompleted($response, 'read');
     }
 
     private static function passesFilter(ResolvedEvent $event, ?ReadFilter $filter): bool
@@ -293,7 +318,15 @@ final class AmphpKurrentClient implements KurrentClientInterface
                 (int) ($event['prepare_position'] ?? 0),
             ),
             recordedAt: \is_string($created) && \ctype_digit($created)
-                ? new \DateTimeImmutable(\sprintf('@%d', \intdiv((int) $created, 10_000_000)))
+                ? (function () use ($created): \DateTimeImmutable {
+                    // a hostile server can send any digit string; wrap the
+                    // conversion so generator bodies don't leak untyped errors
+                    try {
+                        return new \DateTimeImmutable(\sprintf('@%d', \intdiv((int) $created, 10_000_000)));
+                    } catch (\Throwable $error) {
+                        throw new KurrentException('server sent an out-of-range "created" timestamp', previous: $error);
+                    }
+                })()
                 : null,
             contentType: $event['content_type'] ?? EventData::CONTENT_TYPE_OCTET_STREAM,
             link: null, // $> resolution (resolveLinks:true) lands with v0.2's link polish
@@ -330,7 +363,7 @@ final class AmphpKurrentClient implements KurrentClientInterface
     {
         $timeoutMs = $options?->timeoutMs ?? 30_000;
         $request = new Request(
-            ($this->connection->tls ? 'https://' : 'http://') . $this->connection->host . ':' . $this->connection->port . $path,
+            ($this->connection->tls ? 'https://' : 'http://') . $this->connection->httpAuthority() . $path,
             'POST',
         );
         $request->setProtocolVersions(['2']);
@@ -376,7 +409,7 @@ final class AmphpKurrentClient implements KurrentClientInterface
         while (true) {
             try {
                 $response = $this->httpClient()->request(new Request(
-                    ($this->connection->tls ? 'https://' : 'http://') . $this->connection->host . ':' . $this->connection->port . '/health',
+                    ($this->connection->tls ? 'https://' : 'http://') . $this->connection->httpAuthority() . '/health',
                 ));
                 $response->getBody()->buffer();
                 $this->serverReady = true;

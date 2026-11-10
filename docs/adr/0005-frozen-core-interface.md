@@ -10,17 +10,18 @@ alternate implementations never face a BC break from later additions:
 - `readAll(string $stream, ?ReadOptions $readOptions = null, ?CallOptions $options = null): list<ResolvedEvent>`
   — eager (aggregate-reload idiom).
 - `reader(string $stream, ?ReadOptions $readOptions = null, ?CallOptions $options = null): Generator<ResolvedEvent>`
-  — lazy single-stream, cancellable mid-iteration (limit carries a default
-  batch window as implementation detail; direction and `resolveLinks` come
+  — lazy single-stream, cancellable mid-iteration (`limit = null` means
+  unbounded on the wire, `2^63-1` count; direction and `resolveLinks` come
   from `ReadOptions`; `$>`-link *pairing* is a documented v0.2 deferral —
   link events currently render as their own envelopes).
 - `readAllEvents(?ReadOptions $readOptions = null, ?CallOptions $options = null): Generator<ResolvedEvent>`
   — lazy `$all`; the enum-shaped `ReadFilter` VO applies here (one filter
   axis at a time, explicit — no default filter excluding `$`-events,
-  unlike the Python reference).
+  unlike the Python reference). Applied client-side in v0.1; server-side
+  filter wiring is v0.2 polish.
 - `deleteStream` / `tombstoneStream` (same `int|ExpectedStreamState` guard).
-- `currentVersion(string $stream): int|ExpectedStreamState`,
-  `globalCommitPosition(): int` (checkpoint bootstrap).
+- `currentVersion(string $stream, ?CallOptions $options = null): int|ExpectedStreamState`,
+  `globalCommitPosition(?CallOptions $options = null): int` (checkpoint bootstrap).
 - Stream metadata management stays a separate capability interface (ADR-0004),
   post-freeze.
 - Persistent/catch-up subscriptions: capability interfaces, post-freeze.
@@ -38,9 +39,11 @@ current/expected), `NotLeaderException` (with redirect target),
 exceptions is a later minor release; legacy `UNKNOWN` string-sniffing
 workarounds from the Python reference are explicitly not copied.
 
-`AmphpKurrentClient` ships v0.1 implementing append + single-stream reads and
-throws `UnsupportedOperationException` for the remaining frozen methods until
-v0.2 — the interface is stable; the implementation fills in.
+`AmphpKurrentClient` ships v0.1 implementing append, eager + lazy
+single-stream reads, lazy `$all` reads, and `currentVersion`; the remaining
+frozen methods (`deleteStream`, `tombstoneStream`, `globalCommitPosition`)
+throw `UnsupportedOperationException` until v0.2 — the interface is stable;
+the implementation fills in.
 
 Decided 2026-11-09 (grill session follow-up round). Precedent:
 `docs/python-client-api-mapping.md` (kurrentdbclient v1.3.6).
