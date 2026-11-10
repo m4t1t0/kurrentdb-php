@@ -98,21 +98,32 @@ final class StreamsProtocol
      *
      * @param string|array{0:int,1:int}|null $from 'start'|'end'|Position pair
      */
-    public static function readAllReq(string|array|null $from = 'start', int $count = 100): string
+    /**
+     * ReadReq on `$all`: options.all_option = AllOptions
+     * (streams.proto:53 — position=1{commit,prepare}; start=2; **end=3**),
+     * count + no_filter + uuid_option.
+     *
+     * NOTE the asymmetry with {@see readReq()}: StreamOptions (single stream)
+     * has `end` at field 4, AllOptions has it at field 3 — cited, not
+     * guessed (rule 8's whole point).
+     *
+     * @param string|array{0:int,1:int}|null $from 'start'|'end'|Position pair
+     */
+    public static function readAllReq(string|array|null $from = 'start', int $count = 100, bool $backwards = false): string
     {
         $allOptions = match (true) {
             $from === null || $from === 'start' => Protobuf::msg(2, ''),
-            $from === 'end' => Protobuf::msg(4, ''),
+            $from === 'end' => Protobuf::msg(3, ''), // AllOptions.end = field 3 (streams.proto:57)
             default => Protobuf::msg(1, Protobuf::num(1, $from[0], force: true) . Protobuf::num(2, $from[1], force: true)),
         };
 
-        return Protobuf::msg(1, self::readReqPayload(Protobuf::msg(2, $allOptions), $count));
+        return Protobuf::msg(1, self::readReqPayload(Protobuf::msg(2, $allOptions), $count, $backwards));
     }
 
     private static function readReqPayload(string $positionOption, int $count, bool $backwards = false): string
     {
         return $positionOption
-            . Protobuf::num(3, $backwards ? 1 : 0) // read_direction: Backwards encodes 1; Forwards(0) omits
+            . Protobuf::num(3, $backwards ? 1 : 0) // (ReadReq.Options) ReadDirection read_direction=3: Backwards=1, Forwards=0 omitted
             . Protobuf::num(5, $count, force: true)
             . Protobuf::msg(8, '')  // no_filter
             . Protobuf::msg(9, Protobuf::msg(1, '')); // uuid_option: structured
@@ -222,7 +233,7 @@ final class StreamsProtocol
             match ($field) {
                 1 => $event['event_id'] = self::parseUuid(Protobuf::fields($value)),
                 2 => $event['stream_name'] = self::parseStreamName(Protobuf::fields($value)),
-                3 => $event['stream_revision'] = $value, // uint64, zero-based; absent only when 0
+                3 => $event['stream_revision'] = $value, // (ReadResp.ReadEvent.RecordedEvent) uint64 stream_revision=3, zero-based; absent only when 0
                 4 => $event['prepare_position'] = $value,
                 5 => $event['commit_position'] = $value,
                 6 => $event['metadata_entries'][] = $value,

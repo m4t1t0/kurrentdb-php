@@ -106,12 +106,36 @@ abstract class KurrentClientContractTest extends TestCase
         self::assertSame([0, 1, 2], \array_map(static fn ($e) => $e->revision, $events));
     }
 
+    public function testReadAllEventsBackwardsYieldsLogOrderReversed(): void
+    {
+        $client = $this->createClient();
+        $streamA = $this->newStreamName();
+        $streamB = $this->newStreamName();
+
+        // two appends: A@ea first, B@eb second — global log order
+        $client->append($streamA, [\Kurrent\EventData::json('ea', [])], ExpectedStreamState::NoStream);
+        $client->append($streamB, [\Kurrent\EventData::json('eb', [])], ExpectedStreamState::NoStream);
+
+        $types = [];
+        // start + backwards anchors at the log end (the documented semantics
+        // of a null position under backwards direction)
+        foreach ($client->readAllEvents(\Kurrent\ReadOptions::all(backwards: true)) as $resolved) {
+            if ($resolved->streamName === $streamA || $resolved->streamName === $streamB) {
+                $types[] = $resolved->eventType;
+            }
+        }
+
+        self::assertSame(['eb', 'ea'], $types);
+    }
+
     public function testCurrentVersionReportsTheLastRevision(): void
     {
         $client = $this->createClient();
         $stream = $this->newStreamName();
         $client2 = $this->createClient();
 
+        // a SECOND client instance proves currentVersion reads shared server
+        // state, not anything cached on the first connection
         self::assertSame(\Kurrent\ExpectedStreamState::NoStream, $client2->currentVersion($stream));
 
         $client->append($stream, [

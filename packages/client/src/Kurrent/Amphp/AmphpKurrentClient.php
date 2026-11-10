@@ -110,7 +110,7 @@ final class AmphpKurrentClient implements KurrentClientInterface
         $response = $this->startRead(
             fn (): string => Protobuf::grpcFrame(StreamsProtocol::readReq(
                 $stream,
-                self::effectiveLimit($readOptions, 8192),
+                self::effectiveLimit($readOptions),
                 $readOptions->backwards ? 'end' : ($readOptions->streamRevision ?? 'start'),
                 backwards: $readOptions->backwards,
             )),
@@ -126,8 +126,11 @@ final class AmphpKurrentClient implements KurrentClientInterface
         $allPosition = $readOptions->allPosition;
         $response = $this->startRead(
             fn (): string => Protobuf::grpcFrame(StreamsProtocol::readAllReq(
-                $allPosition === null ? 'start' : [$allPosition->commitPosition, $allPosition->preparePosition],
-                self::effectiveLimit($readOptions, 100_000),
+                $allPosition === null
+                    ? ($readOptions->backwards ? 'end' : 'start')
+                    : [$allPosition->commitPosition, $allPosition->preparePosition],
+                self::effectiveLimit($readOptions),
+                $readOptions->backwards,
             )),
             $options,
         );
@@ -185,11 +188,16 @@ final class AmphpKurrentClient implements KurrentClientInterface
 
     // --- read plumbing ------------------------------------------------------
 
-    /** Frozen contract: `limit = null` means unbounded; any non-positive value is invalid input. */
-    private static function effectiveLimit(ReadOptions $readOptions, int $default): int
+    /**
+     * Frozen contract: `limit = null` means unbounded — encoded on the wire
+     * as the maximum uint64 count (the same "all events" convention the Go
+     * client uses for its `sys.maxsize` equivalent). Any non-positive
+     * explicit value is invalid input.
+     */
+    private static function effectiveLimit(ReadOptions $readOptions): int
     {
         return $readOptions->limit === null
-            ? $default
+            ? 0x7fffffffffffffff
             : ($readOptions->limit > 0 ? $readOptions->limit : throw new \InvalidArgumentException('limit must be positive or null (unbounded)'));
     }
 
@@ -334,7 +342,7 @@ final class AmphpKurrentClient implements KurrentClientInterface
             $request->setHeader('requires-leader', 'true');
         }
         $request->setBody(StreamedContent::fromStream(new ContentStream($frames)));
-        $request->setTransferTimeout($timeoutMs / 1000);
+        $request->setTransferTimeout(\max(1, (int) \ceil($timeoutMs / 1000))); // ceil keeps sub-second deadlines alive
         $request->setInactivityTimeout(20);
         $request->setBodySizeLimit(0); // unlimited — server-streamed bodies may exceed 10 MiB
 
@@ -422,7 +430,6 @@ final class AmphpKurrentClient implements KurrentClientInterface
             return;
         }
 
-        $trailers = $response->getTrailers()->await();
         $leaderHost = $trailers->getHeader('leader-endpoint-host');
         $leaderPort = $trailers->getHeader('leader-endpoint-port');
         if ($leaderHost !== null && $leaderPort !== null && \ctype_digit((string) $leaderPort)) {
