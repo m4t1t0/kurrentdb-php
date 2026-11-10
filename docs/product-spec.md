@@ -80,7 +80,11 @@ and `<gh-handle>/kurrentdb-client`, built around the
   (a) the event-sourcing framework expectations study is reviewed as a doc,
   (b) the spike validated append + reads against a real server, and (c) the
   Python client's API is mapped 1:1 in a design note. contracts hits its
-  1.0 tag then and CI starts.
+  1.0 tag then and CI starts. *(Reached 2026-11-10: tag `contracts/v1.0.0`
+  on `bae4819` in this repo. Gate evidence: two code-review rounds + two
+  DeepSeek adversarial rounds; the final adversarial pass BLOCKED the tag
+  candidate `2d96917`, closed by `bae4819` before tagging. CI setup is the
+  immediate follow-up.)*
 
 ## Release scope
 
