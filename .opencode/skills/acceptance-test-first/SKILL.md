@@ -18,7 +18,7 @@ packages/client/        m4t1t0/kurrentdb-client     (amphp implementation)
 tests/
 ├── bootstrap.php                     requires repo /vendor/autoload.php
 ├── contracts/
-│   └── KurrentClientContractTest.php  IMPLEMENTATION-AGNOSTIC suite (abstract)
+│   └── KurrentClientContractTestCase.php  IMPLEMENTATION-AGNOSTIC suite (abstract)
 ├── amphp/
 │   └── AmphpKurrentClientContractTest.php  subclass; createClient() wires the real client
 ├── Dockerfile                         PHP 8.4 + composer harness image

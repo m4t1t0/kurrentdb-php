@@ -66,7 +66,7 @@ Standards axis reads this file.
     implementation (product spec §Quality + the `acceptance-test-first`
     skill).
 14. **Implementation-agnostic suites**: contract tests subclass
-    `KurrentClientContractTest`; every implementation version runs the same
+    `KurrentClientContractTestCase`; every implementation version runs the same
     tests; nothing in the base suite references a concrete client class.
 15. **Fresh stream names per test** (`contract-<hex>` / `orders-<hex>`) —
     suites are re-runnable against a live server without cleanup.

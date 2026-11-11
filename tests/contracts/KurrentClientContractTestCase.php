@@ -21,7 +21,7 @@ use PHPUnit\Framework\TestCase;
  * against the (then-missing) implementation is the ATDD red phase; the green
  * phase is `append` + `readAll` passing.
  */
-abstract class KurrentClientContractTest extends TestCase
+abstract class KurrentClientContractTestCase extends TestCase
 {
     abstract protected function createClient(): KurrentClientInterface;
 

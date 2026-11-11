@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace KurrentDbTests\Amphp;
 
 use Kurrent\KurrentClientInterface;
-use KurrentDbTests\Contracts\KurrentClientContractTest;
+use KurrentDbTests\Contracts\KurrentClientContractTestCase;
 
 /**
  * The amphp implementation on the same contract suite as the acceptance
@@ -14,7 +14,7 @@ use KurrentDbTests\Contracts\KurrentClientContractTest;
  * Connection string comes from KURRENTDB_URI (default tcp through the test
  * compose network, insecure mode).
  */
-final class AmphpKurrentClientContractTest extends KurrentClientContractTest
+final class AmphpKurrentClientContractTest extends KurrentClientContractTestCase
 {
     protected function createClient(): KurrentClientInterface
     {
