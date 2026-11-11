@@ -59,7 +59,11 @@ final class ConnectionDetailsTest extends TestCase
             \json_encode($details),
             \serialize($details),
             \print_r($details, true),
-            \var_dump([]) === null ? \print_r(\get_object_vars($details), true) : '',
+            (function () use ($details): string {
+                \ob_start();
+                \var_dump($details);
+                return (string) \ob_get_clean();
+            })(),
         ] as $rendering) {
             self::assertStringNotContainsString('secret42', (string) $rendering);
         }
