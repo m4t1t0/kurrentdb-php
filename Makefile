@@ -9,15 +9,21 @@ COMPOSER := docker compose exec -T php composer
 .PHONY: help up install test down lock validate tap tap-test render
 
 help:
-	@echo "  make up        build + start the kurrentdb & php containers"
-	@echo "  make install   composer install inside the php container"
-	@echo "  make test      run the acceptance suite against the real server"
-	@echo "  make tap       start the wire-tap (netdump) on the compose network"
-	@echo "  make tap-test  run the suite through the wire-tap (wire-debug entry point)"
-	@echo "  make render    render captured raw HTTP/2 frames with h2dump"
-	@echo "  make down      stop the stack"
-	@echo "  make lock      refresh composer.lock content-hash after composer.json edits"
-	@echo "  make validate  validate composer.json"
+	@echo "──────────────────────────────────────────────────────────"
+	@echo " 🐘 kurrentdb-php · developer harness"
+	@echo "──────────────────────────────────────────────────────────"
+	@echo "  🚀 make up        build + start the kurrentdb & php containers"
+	@echo "  📦 make install   composer install inside the php container"
+	@echo "  🧪 make test      run the acceptance suite against the real server"
+	@echo "  ─── wire debugging (see .opencode/skills/wire-debug) ───"
+	@echo "  🕵️ make tap       start the wire-tap (netdump) on the compose network"
+	@echo "  📡 make tap-test  run the suite through the wire-tap"
+	@echo "  📜 make render    render captured raw HTTP/2 frames with h2dump"
+	@echo "  ─── housekeeping ───"
+	@echo "  🧹 make down      stop the stack"
+	@echo "  🔒 make lock      refresh composer.lock content-hash after composer.json edits"
+	@echo "  ✅ make validate  validate composer.json"
+	@echo "──────────────────────────────────────────────────────────"
 
 up:
 	docker compose up -d --build
