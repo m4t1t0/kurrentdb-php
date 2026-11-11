@@ -44,7 +44,9 @@ final class ConnectionDetailsTest extends TestCase
             } catch (KurrentException $exception) {
                 self::assertStringNotContainsString('secret42', $exception->getMessage(), "credentials leaked via parse error for $uri");
                 self::assertStringNotContainsString('secret', strtolower($exception->getMessage()));
-                self::assertStringNotContainsString('secret42', var_export([ConnectionDetails::class . '::parse message'], true));
+                // docblock trust posture: "never echo the URI or any redacted
+                // variant of it" — the raw uri must not appear at all
+                self::assertStringNotContainsString($uri, $exception->getMessage(), "raw uri echoed in parse error for $uri");
             }
         }
     }
