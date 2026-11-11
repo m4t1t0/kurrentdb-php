@@ -1,4 +1,4 @@
-# Coding Standards — kurrentdb-php-client
+# Coding Standards — kurrentdb-php
 
 Conventions for the two packages (`m4t1t0/kurrentdb-contracts`,
 `m4t1t0/kurrentdb-client`) and the test harness. The `code-review` skill's

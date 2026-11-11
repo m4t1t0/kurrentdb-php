@@ -1,5 +1,5 @@
 {
-    "name": "m4t1t0/kurrentdb-php-client-monorepo",
+    "name": "m4t1t0/kurrentdb-php-monorepo",
     "description": "Development monorepo for m4t1t0/kurrentdb-contracts and m4t1t0/kurrentdb-client (publishes as two Composer packages via subtree splits).",
     "license": "MIT",
     "require": {

@@ -9,7 +9,10 @@ and `<gh-handle>/kurrentdb-client`, built around the
 ## Identity
 
 - Solo repo under the maintainer's personal GitHub account (`m4t1t0`); repo
-  name `kurrentdb-php-client` (or a rename preserving "kurrentdb … php" meaning).
+  name `kurrentdb-php` — renamed from `kurrentdb-php-client` on 2026-11-11 so
+  the name covers both published packages instead of leaning on the client
+  alone (the spec's original "rename preserving `kurrentdb … php` meaning"
+  clause, exercised before CI or Packagist hardcoded the old name).
 - Composer namespaces: `m4t1t0/kurrentdb-contracts`,
   `m4t1t0/kurrentdb-client`. Names deliberately avoid looking official:
   the vendor is personal (Kurrent's official GitHub presence is

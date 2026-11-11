@@ -1,4 +1,4 @@
-# kurrentdb-php-client
+# kurrentdb-php
 
 A **pure-PHP client for KurrentDB** (the renamed EventStoreDB) — built on
 amphp's async HTTP/2 client, using **no PHP extensions, nothing to compile,
@@ -52,7 +52,7 @@ add this repo as a Composer path repository:
 
 ```json
 {
-    "repositories": [{ "type": "path", "url": "path/to/kurrentdb-php-client/packages/*" }]
+    "repositories": [{ "type": "path", "url": "path/to/kurrentdb-php/packages/*" }]
 }
 ```
 
@@ -82,7 +82,7 @@ read demo) is part of the v1.0 definition of done.
   second model, DeepSeek V4.1 Flash, to break the shared-weights self-review
   trap). Contracts 1.0.0 shipped after two rounds of each; the gate trail is
   recorded in [`docs/product-spec.md`](docs/product-spec.md) §Milestones.
-- **Wire debugging is a дисциплина**: when anything fails opaquely, raw
+- **Wire debugging is a discipline**: when anything fails opaquely, raw
   HTTP/2 bytes are captured through a TCP tap and byte-diffed against the
   official Go client ([`wire-debug` skill](.opencode/skills/wire-debug/SKILL.md)).
 
