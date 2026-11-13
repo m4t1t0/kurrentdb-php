@@ -55,7 +55,7 @@ final class ConnectionDetailsTest extends TestCase
     {
         $details = ConnectionDetails::parse('kurrentdb://user:secret42@host:2113?Tls=false');
 
-        // the secret-shape is not stored at all — the only anti-leak shape
+        // no property stores the secret; that absence is the anti-leak guarantee
         foreach ([
             \var_export($details, true),
             \json_encode($details),

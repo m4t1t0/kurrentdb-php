@@ -9,7 +9,7 @@ namespace Kurrent;
  * interface method.
  *
  * Transport today: `timeoutMs` (the `grpc-timeout` deadline). Authentication
- * is deliberately **not** here — it is connection-level in the amphp stack
+ * is deliberately **not** here. It is connection-level in the amphp stack
  * (no per-call gRPC credentials exist there). Future per-call metadata
  * headers will be added here as new readonly fields.
  */

@@ -40,7 +40,7 @@ interface KurrentClientInterface
      * @param string $stream stream name
      * @param ReadOptions|null $readOptions `ReadOptions::stream($revision, ...)`:
      *        null revision = start of stream (forwards) / **stream end**
-     *        (backwards — a null position reads the latest, not the
+     *        (backwards, a null position reads the latest, not the
      *        beginning); `limit = null` = unbounded.
      *        No default filter: `$`-prefixed/system events pass through
      *        unless `readOptions->filter` is set (deliberate deviation

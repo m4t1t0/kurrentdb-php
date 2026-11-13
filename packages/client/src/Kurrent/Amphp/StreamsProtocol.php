@@ -66,7 +66,7 @@ final class StreamsProtocol
         return Protobuf::msg(1, self::appendOptions($stream, $mode));
     }
 
-    /** AppendReq{content: proposed_message} (Append RPC event frame) — field 2, not 1! */
+    /** AppendReq{content: proposed_message} (Append RPC event frame) — field 2, not field 1. */
     public static function appendReqMessage(string $eventUuid, string $data, string $eventType, string $contentType, null|string $metadataBytes = null): string
     {
         return Protobuf::msg(2, self::proposedMessage($eventUuid, $data, $eventType, $contentType, $metadataBytes));
@@ -125,7 +125,7 @@ final class StreamsProtocol
             . Protobuf::msg(9, Protobuf::msg(1, '')); // uuid_option: structured
     }
 
-    /** event_store.client.StreamIdentifier { bytes stream_name = 3 } — field 3! */
+    /** event_store.client.StreamIdentifier { bytes stream_name = 3 } — stream_name at field 3, not field 1. */
     private static function streamIdentifier(string $stream): string
     {
         return Protobuf::bytes(3, $stream);

@@ -8,8 +8,8 @@ namespace Kurrent;
  * The read-side event envelope.
  *
  * Flat, schema-free, and carrying the full address of the event: its stream
- * and revision, its `$all` position, when it happened, and — when reading
- * with `resolveLinks` — the resolved `$>` link alongside the target event's
+ * and revision, its `$all` position, when it happened, and (when reading
+ * with `resolveLinks`) the resolved `$>` link alongside the target event's
  * payload. When links are *not* resolved, the raw `$>` event arrives as its
  * own envelope.
  */
