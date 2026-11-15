@@ -1,6 +1,9 @@
 services:
   kurrentdb:
     image: kurrentplatform/kurrentdb:latest
+    # stable KurrentDB images are amd64-only; Apple Silicon runs them emulated,
+    # which also matches GitHub Actions' amd64 runners (platform parity)
+    platform: linux/amd64
     command: --insecure --run-projections=All --enable-atom-pub-over-http
     ports:
       - "2113:2113"
