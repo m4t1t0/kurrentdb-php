@@ -6,7 +6,7 @@ COMPOSER := docker compose exec -T php composer
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up install test down reset lock validate tap tap-test render
+.PHONY: help up install test down reset wipe lock validate tap tap-test render
 
 help:
 	@echo "──────────────────────────────────────────────────────────"
@@ -22,6 +22,7 @@ help:
 	@echo "  ─── housekeeping ───"
 	@echo "  🧹 make down      stop the stack (data persists! see reset)"
 	@echo "  🔁 make reset     stop + wipe all volumes + fresh empty database"
+	@echo "  🧽 make wipe      delete every stream, keep the stack running"
 	@echo "  🔒 make lock      refresh composer.lock content-hash after composer.json edits"
 	@echo "  ✅ make validate  validate composer.json"
 	@echo "──────────────────────────────────────────────────────────"
@@ -43,6 +44,16 @@ down:
 reset:
 	docker compose down -v
 	docker compose up -d
+
+## wipe: remove every user stream without tearing down the stack. Recreates
+## only the kurrentdb container with a fresh anonymous data volume
+## (--renew-anon-volumes, else compose reuses the old one and nothing is
+## wiped). System $-streams from --run-projections=All regenerate instantly;
+## user streams are gone.
+wipe:
+	docker compose up -d --force-recreate --renew-anon-volumes kurrentdb
+	@until [ "$$(curl -s -o /dev/null -w '%{http_code}' http://localhost:2113/health/live 2>/dev/null)" = "204" ]; do sleep 1; done
+	@echo "kurrentdb recreated with an empty database"
 
 lock:
 	$(COMPOSER) update --lock
