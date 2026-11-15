@@ -2,6 +2,8 @@ services:
   kurrentdb:
     image: kurrentplatform/kurrentdb:latest
     command: --insecure --run-projections=All --enable-atom-pub-over-http
+    ports:
+      - "2113:2113"
 
   php:
     build: tests
