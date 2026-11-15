@@ -6,7 +6,7 @@ COMPOSER := docker compose exec -T php composer
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up install test down lock validate tap tap-test render
+.PHONY: help up install test down reset lock validate tap tap-test render
 
 help:
 	@echo "──────────────────────────────────────────────────────────"
@@ -20,7 +20,8 @@ help:
 	@echo "  📡 make tap-test  run the suite through the wire-tap"
 	@echo "  📜 make render    render captured raw HTTP/2 frames with h2dump"
 	@echo "  ─── housekeeping ───"
-	@echo "  🧹 make down      stop the stack"
+	@echo "  🧹 make down      stop the stack (data persists! see reset)"
+	@echo "  🔁 make reset     stop + wipe all volumes + fresh empty database"
 	@echo "  🔒 make lock      refresh composer.lock content-hash after composer.json edits"
 	@echo "  ✅ make validate  validate composer.json"
 	@echo "──────────────────────────────────────────────────────────"
@@ -36,6 +37,12 @@ test:
 
 down:
 	docker compose down
+
+## reset: full data wipe. down alone keeps data because the kurrentdb image
+## declares anonymous volumes (/var/lib/kurrentdb) that compose reuses.
+reset:
+	docker compose down -v
+	docker compose up -d
 
 lock:
 	$(COMPOSER) update --lock
